@@ -1,26 +1,21 @@
-import urllib.request
-import urllib.parse
+from curl_cffi import requests
 from bs4 import BeautifulSoup
 import json
 import os
 
-# デジマートの検索URL（必要に応じてご自身の検索URLに書き換えてください）
 TARGET_URL = "https://www.digimart.net/search?keyword=Tak+Matsumoto"
 STATE_FILE = "notified_links.json"
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 def fetch_digimart():
-    # デジマートのWAF（403ブロック）を回避するため、ブラウザになりすますヘッダーを設定
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.7",
-        "Referer": "https://www.digimart.net/",
-    }
-    req = urllib.request.Request(TARGET_URL, headers=headers)
     try:
-        with urllib.request.urlopen(req) as response:
-            return response.read().decode("utf-8")
+        # curl_cffiでChromeブラウザになりすましてCloudflareのブロックを突破する
+        response = requests.get(TARGET_URL, impersonate="chrome", timeout=15)
+        if response.status_code == 200:
+            return response.text
+        else:
+            print(f"フェッチエラー: ステータスコード {response.status_code}")
+            return None
     except Exception as e:
         print(f"フェッチエラー: {e}")
         return None
@@ -29,7 +24,6 @@ def parse_items(html):
     soup = BeautifulSoup(html, "html.parser")
     items = []
     
-    # デジマートの検索結果ブロック
     blocks = soup.find_all("div", class_="itemSearchBlock")
     for block in blocks:
         title_tag = block.find("a", class_="itemTitle")
@@ -39,7 +33,6 @@ def parse_items(html):
             if link and not link.startswith("http"):
                 link = "https://www.digimart.net" + link
             
-            # 価格の取得
             price_tag = block.find("p", class_="itemPrice")
             price = price_tag.get_text(strip=True) if price_tag else "価格不明"
             
@@ -73,15 +66,9 @@ def send_discord(new_items):
             "content": f"🎸 **【デジマート新着】Tak Matsumoto DC 関連**\n**商品名:** {item['title']}\n**価格:** {item['price']}\n🔗 {item['link']}"
         }
         data = json.dumps(content).encode("utf-8")
-        req = urllib.request.Request(
-            WEBHOOK_URL,
-            data=data,
-            headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
-        )
-        try:
-            urllib.request.urlopen(req)
-        except Exception as e:
-            print(f"Discord送信エラー: {e}")
+        req = requests.post(WEBHOOK_URL, json=content)
+        if req.status_code != 204 and req.status_code != 200:
+            print(f"Discord送信エラー: {req.status_code}")
 
 def main():
     html = fetch_digimart()
@@ -95,16 +82,16 @@ def main():
         print("商品は検出されませんでした。")
         return
 
-    notified_links = load_notified_links()
     reversed_items = list(reversed(items))
     
-    # 初回実行時（ファイルがない場合）は全件既読にして通知しない
+    # 初回実行時（ファイルがない場合）は全件既読にして終了
     if not os.path.exists(STATE_FILE):
         all_links = [item['link'] for item in reversed_items]
         save_notified_links(all_links)
         print("【初期完了】現在の出品を既読として登録しました。次回から新着を通知します。")
         return
 
+    notified_links = load_notified_links()
     new_items = []
     all_links = notified_links.copy()
     
