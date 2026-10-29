@@ -24,44 +24,48 @@ def parse_items(html):
     soup = BeautifulSoup(html, "html.parser")
     items = []
     
-    # クラス名に依存せず、デジマートの商品詳細ページへのリンク（/item/ または /shop/.../shop_detail...）を持つ a タグを広く探す
     seen_links = set()
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        # デジマートの商品ページURLパターンに合致するもの
-        if "/shop/" in href and "/item/" in href:
+    # デジマートの商品ページにつながるリンクを幅広くキャッチする
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        # 商品詳細ページのURLパターン（shopやproduct、IDを含むもの）
+        if "/shop/" in href or "/product/" in href or "DS" in href:
+            title = a.get_text(strip=True)
+            # 文字数が少なすぎるものやメニュー系リンクは除外
+            if len(title) < 6:
+                continue
+                
             link = href
             if not link.startswith("http"):
                 link = "https://www.digimart.net" + link
-            
-            # 重複を防ぐ
+                
             if link in seen_links:
                 continue
             seen_links.add(link)
             
-            title = a_tag.get_text(strip=True)
-            # タイトルが短すぎるものや、画像リンクなどは除外
-            if len(title) < 5:
-                continue
-                
-            # 価格情報を周辺から探す
+            # 周辺から価格（￥や円）を探す
             price = "価格不明"
-            parent = a_tag.find_parent("div")
-            for _ in range(3): # 親要素を少し遡って価格らしきテキストを探す
-                if parent:
-                    price_tag = parent.find(lambda t: t.name and ('price' in t.get('class', [''])[0].lower() or 'yen' in t.text or '￥' in t.text))
-                    if price_tag:
-                        price_text = price_tag.get_text(strip=True)
-                        if "￥" in price_text or "円" in price_text:
-                            price = price_text
+            parent = a.find_parent(["div", "li", "article", "section"])
+            if parent:
+                # ￥か円を含むテキスト要素を探す
+                price_candidates = parent.find_all(lambda t: t.name and t.text and ('￥' in t.text or '円' in t.text))
+                for pc in price_candidates:
+                    text = pc.get_text(strip=True)
+                    if "￥" in text or "円" in text:
+                        # 長すぎるテキストからではなく、ピンポイントで価格っぽい部分を抽出
+                        for line in text.split():
+                            if "￥" in line or "円" in line:
+                                price = line.strip()
+                                break
+                        if price != "価格不明":
                             break
-                    parent = parent.find_parent("div")
             
             items.append({
                 "title": title,
                 "link": link,
                 "price": price
             })
+            
     return items
 
 def load_notified_links():
