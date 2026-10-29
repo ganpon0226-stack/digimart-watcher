@@ -24,17 +24,38 @@ def parse_items(html):
     soup = BeautifulSoup(html, "html.parser")
     items = []
     
-    blocks = soup.find_all("div", class_="itemSearchBlock")
-    for block in blocks:
-        title_tag = block.find("a", class_="itemTitle")
-        if title_tag:
-            title = title_tag.get_text(strip=True)
-            link = title_tag.get("href")
-            if link and not link.startswith("http"):
+    # クラス名に依存せず、デジマートの商品詳細ページへのリンク（/item/ または /shop/.../shop_detail...）を持つ a タグを広く探す
+    seen_links = set()
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        # デジマートの商品ページURLパターンに合致するもの
+        if "/shop/" in href and "/item/" in href:
+            link = href
+            if not link.startswith("http"):
                 link = "https://www.digimart.net" + link
             
-            price_tag = block.find("p", class_="itemPrice")
-            price = price_tag.get_text(strip=True) if price_tag else "価格不明"
+            # 重複を防ぐ
+            if link in seen_links:
+                continue
+            seen_links.add(link)
+            
+            title = a_tag.get_text(strip=True)
+            # タイトルが短すぎるものや、画像リンクなどは除外
+            if len(title) < 5:
+                continue
+                
+            # 価格情報を周辺から探す
+            price = "価格不明"
+            parent = a_tag.find_parent("div")
+            for _ in range(3): # 親要素を少し遡って価格らしきテキストを探す
+                if parent:
+                    price_tag = parent.find(lambda t: t.name and ('price' in t.get('class', [''])[0].lower() or 'yen' in t.text or '￥' in t.text))
+                    if price_tag:
+                        price_text = price_tag.get_text(strip=True)
+                        if "￥" in price_text or "円" in price_text:
+                            price = price_text
+                            break
+                    parent = parent.find_parent("div")
             
             items.append({
                 "title": title,
