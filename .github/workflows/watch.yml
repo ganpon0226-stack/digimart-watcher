@@ -2,8 +2,8 @@ name: Digimart Watcher
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # 30分おきに実行
-  workflow_dispatch: # 手動実行も可能
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   check:
@@ -17,6 +17,10 @@ jobs:
         with:
           python-version: '3.10'
 
+      # ★ ここにパッケージのインストールを追加！
+      - name: Install dependencies
+        run: pip install beautifulsoup4
+
       - name: Run watcher script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -26,5 +30,5 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add notified_links.json || true
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update notified links state" && git push)
+          git add notified_links.json
+          git diff --staged --quiet || (git commit -m "Update notified links [skip ci]" && git push)
