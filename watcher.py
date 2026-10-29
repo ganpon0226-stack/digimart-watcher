@@ -1,31 +1,16 @@
-import os
-import json
 import urllib.request
 import urllib.parse
-import re
+from bs4 import BeautifulSoup
+import json
+import os
 
-DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
-TARGET_URL = "https://www.digimart.net/search?category1Id=13&keywordAnd=Tak+Matsumoto+DC&sftk=1&sortKey=DISP_DATE_DESC"
+# デジマートの検索URL（必要に応じてご自身の検索URLに書き換えてください）
+TARGET_URL = "https://www.digimart.net/search?keyword=Tak+Matsumoto"
 STATE_FILE = "notified_links.json"
-
-def load_notified_links():
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return []
-    return []
-
-def save_notified_links(links):
-    # 最大100件まで保持
-    if len(links) > 100:
-        links = links[-100:]
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(links, f, ensure_ascii=False, indent=2)
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 def fetch_digimart():
-    # より本物のブラウザに近いヘッダーを設定して403を回避する
+    # デジマートのWAF（403ブロック）を回避するため、ブラウザになりすますヘッダーを設定
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -41,79 +26,97 @@ def fetch_digimart():
         return None
 
 def parse_items(html):
+    soup = BeautifulSoup(html, "html.parser")
     items = []
-    item_blocks = html.split('<div class="itemSearchBlock')
     
-    for i in range(1, len(item_blocks)):
-        block = item_blocks[i]
-        
-        title_match = re.search(r'<p class="ttl">\s*<a href="([^"]+)"[^>]*>([\s\S]*?)<\/a>', block)
-        price_match = re.search(r'<span[^>]*class="price"[^>]*>([\s\S]*?)<\/span>', block, re.IGNORECASE)
-        shop_match = re.search(r'class="itemShopInfo"[\s\S]*?>([\s\S]*?)<\/p>', block, re.IGNORECASE)
-        
-        if title_match:
-            link = "https://www.digimart.net" + title_match.group(1).strip()
-            title = re.sub(r'<[^>]+>', '', title_match.group(2)).replace(' ', ' ').strip()
-            price = re.sub(r'<[^>]+>', '', price_match.group(1)).strip() if price_match else "価格不明"
-            shop = re.sub(r'<[^>]+>', '', shop_match.group(1)).strip() if shop_match else "店舗不明"
+    # デジマートの検索結果ブロック
+    blocks = soup.find_all("div", class_="itemSearchBlock")
+    for block in blocks:
+        title_tag = block.find("a", class_="itemTitle")
+        if title_tag:
+            title = title_tag.get_text(strip=True)
+            link = title_tag.get("href")
+            if link and not link.startswith("http"):
+                link = "https://www.digimart.net" + link
             
-            if link not in [item['link'] for item in items]:
-                items.append({'title': title, 'link': link, 'price': price, 'shop': shop})
-                
+            # 価格の取得
+            price_tag = block.find("p", class_="itemPrice")
+            price = price_tag.get_text(strip=True) if price_tag else "価格不明"
+            
+            items.append({
+                "title": title,
+                "link": link,
+                "price": price
+            })
     return items
 
+def load_notified_links():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return []
+    return []
+
+def save_notified_links(links):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(links, f, ensure_ascii=False, indent=2)
+
 def send_discord(new_items):
-    content = f"🎸 【デジマート新着情報】 Tak Matsumoto DC が **{len(new_items)}件** 出品されました！\n\n"
-    for i, item in enumerate(new_items):
-        content += f"{i + 1}. **{item['title']}**\n"
-        content += f"💰 価格: {item['price']} | 🏪 店舗: {item['shop']}\n"
-        content += f"🔗 {item['link']}\n\n"
-        
-    payload = json.dumps({"content": content}).encode("utf-8")
-    req = urllib.request.Request(
-        DISCORD_WEBHOOK_URL,
-        data=payload,
-        headers={"Content-Type": "application/json"}
-    )
-    urllib.request.urlopen(req)
+    if not WEBHOOK_URL:
+        print("DISCORD_WEBHOOK_URLが設定されていません。")
+        return
+    
+    for item in new_items:
+        content = {
+            "content": f"🎸 **【デジマート新着】Tak Matsumoto DC 関連**\n**商品名:** {item['title']}\n**価格:** {item['price']}\n🔗 {item['link']}"
+        }
+        data = json.dumps(content).encode("utf-8")
+        req = urllib.request.Request(
+            WEBHOOK_URL,
+            data=data,
+            headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        )
+        try:
+            urllib.request.urlopen(req)
+        except Exception as e:
+            print(f"Discord送信エラー: {e}")
 
 def main():
     html = fetch_digimart()
     if not html:
         return
-        
+    
     items = parse_items(html)
+    print(f"検出された商品数: {len(items)}件")
+    
     if not items:
         print("商品は検出されませんでした。")
         return
-        
-    print(f"検出された商品数: {len(items)}件")
-    
-    # notified_links = load_notified_links()
-    # reversed_items = list(reversed(items))
 
-    send_discord(items)
-    print("テスト通知を送信しました。")
-    return
+    notified_links = load_notified_links()
+    reversed_items = list(reversed(items))
     
     # 初回実行時（ファイルがない場合）は全件既読にして通知しない
     if not os.path.exists(STATE_FILE):
         all_links = [item['link'] for item in reversed_items]
         save_notified_links(all_links)
-        print("【初期化完了】現在の出品を既読として登録しました。")
+        print("【初期完了】現在の出品を既読として登録しました。次回から新着を通知します。")
         return
-        
+
     new_items = []
     all_links = notified_links.copy()
+    
     for item in reversed_items:
         if item['link'] not in notified_links:
             new_items.append(item)
             all_links.append(item['link'])
             
     if new_items:
+        print(f"新着商品 {len(new_items)}件を検知しました！")
         send_discord(new_items)
         save_notified_links(all_links)
-        print(f"新着 {len(new_items)} 件を通知しました。")
     else:
         print("新しい出品はありませんでした。")
 
