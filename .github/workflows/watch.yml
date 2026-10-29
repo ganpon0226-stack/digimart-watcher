@@ -2,7 +2,7 @@ name: Digimart Watcher
 
 on:
   schedule:
-    - cron: '*/30 * * * *' # 30分おきに実行
+    - cron: '*/5 * * * *' # 30分おきに実行
   workflow_dispatch: # 手動実行も可能
 
 jobs:
