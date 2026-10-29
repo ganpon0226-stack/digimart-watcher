@@ -85,8 +85,12 @@ def main():
         
     print(f"検出された商品数: {len(items)}件")
     
-    notified_links = load_notified_links()
-    reversed_items = list(reversed(items))
+    # notified_links = load_notified_links()
+    # reversed_items = list(reversed(items))
+
+    send_discord(items)
+    print("テスト通知を送信しました。")
+    return
     
     # 初回実行時（ファイルがない場合）は全件既読にして通知しない
     if not os.path.exists(STATE_FILE):
