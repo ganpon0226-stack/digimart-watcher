@@ -17,9 +17,9 @@ jobs:
         with:
           python-version: '3.10'
 
-      # ★ ここにパッケージのインストールを追加！
+      # ★ curl_cffi も一緒にインストールする
       - name: Install dependencies
-        run: pip install beautifulsoup4
+        run: pip install beautifulsoup4 curl_cffi
 
       - name: Run watcher script
         env:
@@ -30,5 +30,5 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add notified_links.json
+          git add notified_links.json || true
           git diff --staged --quiet || (git commit -m "Update notified links [skip ci]" && git push)
