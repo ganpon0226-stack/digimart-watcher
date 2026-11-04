@@ -87,8 +87,9 @@ def send_discord(new_items):
         return
     
     for item in new_items:
+        # 👇 【修正】文頭に "@everyone " を追加します
         content = {
-            "content": f"🎸 **【デジマート新着】Tak Matsumoto DC 関連**\n**商品名:** {item['title']}\n**価格:** {item['price']}\n🔗 {item['link']}"
+            "content": f"@everyone 🎸 **【デジマート新着】Tak Matsumoto DC 関連**\n**商品名:** {item['title']}\n**価格:** {item['price']}\n🔗 {item['link']}"
         }
         data = json.dumps(content).encode("utf-8")
         req = requests.post(WEBHOOK_URL, json=content)
