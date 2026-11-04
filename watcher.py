@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import json
 import os
 
-TARGET_URL = "https://www.digimart.net/search?keyword=Tak+Matsumoto"
+TARGET_URL = "https://www.digimart.net/search?keyword=Gibson+Tak+Matsumoto"
 STATE_FILE = "notified_links.json"
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
